@@ -1,12 +1,18 @@
-const express = require("express");
+const express = require('express');
 const router = express.Router();
-const protect = require("../middleware/authMiddleware");
-const Student = require("../models/students");
+const { getStudents, addStudent, deleteStudent, getStudentDetails, getStudentCourses } = require('../controllers/studentController');
+const { protect, admin } = require('../middleware/authMiddleware');
 
-// Dashboard route
-router.get("/dashboard", protect, async (req, res) => {
-  const student = await Student.findById(req.user.id).select("-password");
-  res.json(student);
-});
+// Admin routes
+router.route('/')
+    .get(protect, admin, getStudents)
+    .post(protect, admin, addStudent);
+
+router.route('/:id')
+    .delete(protect, admin, deleteStudent);
+
+// Student routes
+router.get('/me/details', protect, getStudentDetails);
+router.get('/me/courses', protect, getStudentCourses);
 
 module.exports = router;

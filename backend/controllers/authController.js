@@ -1,70 +1,108 @@
-const Student = require("../models/students");
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
+const User = require('../models/User');
+const Student = require('../models/Student');
+const jwt = require('jsonwebtoken');
 
-// Register
-const register = async (req, res) => {
-  try {
-    const { name, email, password, course } = req.body;
+// Generate JWT
+const generateToken = (id) => {
+    return jwt.sign({ id }, process.env.JWT_SECRET || 'secret', {
+        expiresIn: '30d',
+    });
+};
 
-    const existing = await Student.findOne({ email });
-    if (existing) {
-      return res.status(400).json({ msg: "User already exists" });
+// @desc    Register new user
+// @route   POST /api/auth/register
+// @access  Public
+const registerUser = async (req, res) => {
+    const { name, email, password, role, contactNumber, courses } = req.body;
+
+    try {
+        const userExists = await User.findOne({ email });
+
+        if (userExists) {
+            return res.status(400).json({ message: 'User already exists' });
+        }
+
+        const user = await User.create({
+            name,
+            email,
+            password,
+            role: role || 'student'
+        });
+
+        if (user) {
+            // If student, create a student profile
+            if (user.role === 'student') {
+                await Student.create({
+                    user: user._id,
+                    contactNumber: contactNumber || '',
+                    courses: courses || []
+                });
+            }
+
+            res.status(201).json({
+                _id: user.id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                token: generateToken(user._id),
+            });
+        } else {
+            res.status(400).json({ message: 'Invalid user data' });
+        }
+    } catch (error) {
+        res.status(500).json({ message: error.message });
     }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const student = await Student.create({
-      name,
-      email,
-      password: hashedPassword,
-      course,
-      role: "student", // 👈 important
-    });
-
-    res.json({ msg: "Student Registered ✅" });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
 };
 
-exports.register = async (req, res) => {
-  try {
-    const { name, email, password, course,role } = req.body;
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const student = await Student.create({
-      name,
-      email,
-      password: hashedPassword,
-      course,
-      role
-    });
-
-    res.json(student);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// Login
-exports.login = async (req, res) => {
-  try {
+// @desc    Authenticate a user
+// @route   POST /api/auth/login
+// @access  Public
+const loginUser = async (req, res) => {
     const { email, password } = req.body;
 
-    const student = await Student.findOne({ email });
+    try {
+        const user = await User.findOne({ email });
 
-    if (!student) return res.status(400).json({ msg: "User not found" });
+        if (user && (await user.matchPassword(password))) {
+            res.json({
+                _id: user.id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                token: generateToken(user._id),
+            });
+        } else {
+            res.status(401).json({ message: 'Invalid email or password' });
+        }
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
 
-    const isMatch = await bcrypt.compare(password, student.password);
+// @desc    Get user data
+// @route   GET /api/auth/profile
+// @access  Private
+const getUserProfile = async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id);
 
-    if (!isMatch) return res.status(400).json({ msg: "Invalid credentials" });
+        if (user) {
+            res.json({
+                _id: user.id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+            });
+        } else {
+            res.status(404).json({ message: 'User not found' });
+        }
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
 
-    const token = jwt.sign({ id: student._id }, process.env.JWT_SECRET);
-
-    res.json({ token, student });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+module.exports = {
+    registerUser,
+    loginUser,
+    getUserProfile,
 };
